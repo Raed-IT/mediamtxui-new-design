@@ -4,6 +4,8 @@ import { getCurrentUser, hasRole } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { createUserService, deleteUserService, listUsersService, updateUserService } from '@/mvc/services/user.service'
 
+type UserPayload = { email: string; password?: string; name: string; role: Role; cityId: number }
+
 const userSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6).optional(),
@@ -21,14 +23,14 @@ async function guard() {
 export async function listUsersController() {
   if (!(await guard())) return fail('Forbidden', 403)
   const users = await listUsersService()
-  return ok(users.map(({ password, ...user }) => user))
+  return ok((users as Array<Record<string, unknown>>).map(({ password: _password, ...user }) => user))
 }
 
 export async function createUserController(request: Request) {
   if (!(await guard())) return fail('Forbidden', 403)
   const body = userSchema.extend({ password: z.string().min(6) }).safeParse(await request.json())
   if (!body.success) return fail('Invalid user data', 422)
-  const { password, ...user } = await createUserService(body.data)
+  const { password: _password, ...user } = await createUserService(body.data as UserPayload & { password: string })
   return ok(user, 201)
 }
 
@@ -36,7 +38,7 @@ export async function updateUserController(request: Request, id: number) {
   if (!(await guard())) return fail('Forbidden', 403)
   const body = userSchema.safeParse(await request.json())
   if (!body.success) return fail('Invalid user data', 422)
-  const { password, ...user } = await updateUserService(id, body.data)
+  const { password: _password, ...user } = await updateUserService(id, body.data as UserPayload)
   return ok(user)
 }
 

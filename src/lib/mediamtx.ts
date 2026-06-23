@@ -16,6 +16,21 @@ export type MediaMtxList<T> = {
   items?: T[]
 }
 
+export type MediaMtxInfo = {
+  version?: string
+  started?: string
+  [key: string]: unknown
+}
+
+export type MediaMtxSessionsMap = {
+  rtmp: MediaMtxSession[]
+  webrtc: MediaMtxSession[]
+  rtsp: MediaMtxSession[]
+  rtspConn: MediaMtxSession[]
+  hls: MediaMtxSession[]
+  srt: MediaMtxSession[]
+}
+
 export type MediaMtxSession = {
   id: string
   created?: string
@@ -64,8 +79,8 @@ export async function mediaMtxFetch<T>(path: string, init?: RequestInit): Promis
   return (text ? JSON.parse(text) : {}) as T
 }
 
-export async function getMediaMtxInfo() {
-  return mediaMtxFetch<Record<string, unknown>>('/v3/info')
+export async function getMediaMtxInfo(): Promise<MediaMtxInfo> {
+  return mediaMtxFetch<MediaMtxInfo>('/v3/info')
 }
 
 export async function listMediaMtxPaths(): Promise<MediaMtxPath[]> {
@@ -136,7 +151,7 @@ export async function deleteMediaMtxPathConfig(name: string) {
   return mediaMtxFetch(`/v3/config/paths/delete/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }
 
-export async function listMediaMtxSessions() {
+export async function listMediaMtxSessions(): Promise<MediaMtxSessionsMap> {
   const [rtmp, webrtc, rtsp, rtspConn, hls, srt] = await Promise.allSettled([
     mediaMtxFetch<MediaMtxList<MediaMtxSession>>('/v3/rtmpconns/list'),
     mediaMtxFetch<MediaMtxList<MediaMtxSession>>('/v3/webrtcsessions/list'),
@@ -209,7 +224,21 @@ export function makeWebRtcUrl(streamKey: string) {
   return `${base}/${streamKey}`
 }
 
-export function makeInputUrl(streamKey: string) {
-  const template = process.env.FFMPEG_INPUT_TEMPLATE || 'rtsp://127.0.0.1:8554/{streamKey}'
+function applyTemplate(template: string, streamKey: string) {
   return template.replaceAll('{streamKey}', streamKey)
+}
+
+export function makeInputUrls(streamKey: string) {
+  const templates = [
+    process.env.FFMPEG_INPUT_TEMPLATE,
+    process.env.FFMPEG_RTSP_INPUT_TEMPLATE,
+    process.env.FFMPEG_HLS_INPUT_TEMPLATE || 'http://127.0.0.1:8888/{streamKey}/index.m3u8',
+    'rtsp://127.0.0.1:8554/{streamKey}',
+  ].filter(Boolean) as string[]
+
+  return Array.from(new Set(templates.map((template) => applyTemplate(template, streamKey))))
+}
+
+export function makeInputUrl(streamKey: string) {
+  return makeInputUrls(streamKey)[0]
 }

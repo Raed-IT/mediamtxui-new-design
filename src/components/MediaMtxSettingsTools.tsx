@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Clapperboard, Eye, Radio, Save, ShieldAlert, Trash2, Users, Video, Wifi } from 'lucide-react'
 import { api } from './ApiClient'
+import type { MediaMtxSession } from '@/lib/mediamtx'
 
 type JsonEditorProps = {
   title: string
@@ -55,8 +56,10 @@ export function JsonEditor({ title, subtitle, endpoint, method = 'PATCH', initia
   )
 }
 
+type SettingsCard = [label: string, enabled: unknown, address: unknown, icon: ReactNode]
+
 export function SettingsCards({ data }: { data: Record<string, unknown> }) {
-  const cards = useMemo(() => [
+  const cards = useMemo<SettingsCard[]>(() => [
     ['واجهة التحكم', data.api, data.apiAddress, <Radio size={24} key="api" />],
     ['بث RTSP', data.rtsp, data.rtspAddress, <Video size={24} key="rtsp" />],
     ['إرسال RTMP', data.rtmp, data.rtmpAddress, <Wifi size={24} key="rtmp" />],
@@ -166,9 +169,13 @@ export function PathConfigTable({ configs }: { configs: Array<Record<string, unk
   )
 }
 
-export function SessionsTable({ sessions }: { sessions: Record<string, Array<Record<string, unknown>>> }) {
+type SessionRow = MediaMtxSession & { protocol: string }
+
+export function SessionsTable({ sessions }: { sessions: Record<string, MediaMtxSession[]> }) {
   const router = useRouter()
-  const rows = Object.entries(sessions).flatMap(([protocol, items]) => items.map((item) => ({ protocol, ...item })))
+  const rows: SessionRow[] = Object.entries(sessions).flatMap(([protocol, items]) =>
+    items.map((item) => ({ protocol, ...item })),
+  )
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const perPage = 10

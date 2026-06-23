@@ -3,6 +3,7 @@
 import Shell from '@/components/Shell'
 import { api } from '@/components/ApiClient'
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Camera,
   Columns3,
@@ -61,6 +62,7 @@ export default function LiveGrid() {
   const [fullscreenColumns, setFullscreenColumns] = useState(5)
   const [fullscreenRows, setFullscreenRows] = useState(4)
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
   const activeCells = useMemo(() => cells.filter(Boolean).length, [cells])
   const assignedIds = useMemo(() => new Set(cells.filter(Boolean).map((drone) => drone!.id)), [cells])
@@ -68,6 +70,10 @@ export default function LiveGrid() {
     () => liveDrones.filter((drone) => !assignedIds.has(drone.id)),
     [liveDrones, assignedIds]
   )
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     const savedCellCount = getNumberSetting('liveGridCellCount', 20)
@@ -195,30 +201,43 @@ export default function LiveGrid() {
   }
 
   async function startRecording(drone: Drone) {
-    await api<{ file: string }>('/api/live/recording/start', {
-      method: 'POST',
-      body: JSON.stringify({ streamKey: drone.streamKey }),
-    })
-    setToast(`بدأ تسجيل بث ${drone.label}`)
-    loadLiveDrones().catch(() => {})
+    try {
+      await api<{ file: string }>('/api/live/recording/start', {
+        method: 'POST',
+        body: JSON.stringify({ streamKey: drone.streamKey }),
+      })
+      setToast(`بدأ تسجيل بث ${drone.label}`)
+      loadLiveDrones().catch(() => {})
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'تعذر بدء التسجيل')
+    }
   }
 
   async function stopRecording(drone: Drone) {
-    const res = await api<{ file: string | null }>('/api/live/recording/stop', {
-      method: 'POST',
-      body: JSON.stringify({ streamKey: drone.streamKey }),
-    })
-    setToast(res.file ? `تم حفظ تسجيل ${drone.label}` : `تم إيقاف تسجيل ${drone.label}`)
-    loadLiveDrones().catch(() => {})
+    try {
+      const res = await api<{ file: string | null }>('/api/live/recording/stop', {
+        method: 'POST',
+        body: JSON.stringify({ streamKey: drone.streamKey }),
+      })
+      setToast(res.file ? `تم حفظ تسجيل ${drone.label}` : `تم إيقاف تسجيل ${drone.label}`)
+      if (res.file) window.open(res.file, '_blank')
+      loadLiveDrones().catch(() => {})
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'تعذر إيقاف التسجيل')
+    }
   }
 
   async function snapshot(drone: Drone) {
-    const res = await api<{ file: string }>('/api/live/snapshot', {
-      method: 'POST',
-      body: JSON.stringify({ streamKey: drone.streamKey }),
-    })
-    setToast(`تم حفظ لقطة من ${drone.label}`)
-    window.open(res.file, '_blank')
+    try {
+      const res = await api<{ file: string }>('/api/live/snapshot', {
+        method: 'POST',
+        body: JSON.stringify({ streamKey: drone.streamKey }),
+      })
+      setToast(`تم حفظ لقطة من ${drone.label}`)
+      window.open(res.file, '_blank')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'تعذر أخذ اللقطة')
+    }
   }
 
   const grid = (
@@ -328,7 +347,7 @@ export default function LiveGrid() {
     </aside>
   )
 
-  const modal = expanded && (
+  const modalContent = expanded && (
     <div className="modal-backdrop live-grid-preview-backdrop" onClick={() => setExpanded(null)}>
       <div className="card stream-modal studio-modal live-grid-preview-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
@@ -352,6 +371,38 @@ export default function LiveGrid() {
     </div>
   )
 
+  if (expanded) {
+    return (
+      <main className="single-stream-viewer" dir="ltr">
+        {toast && <div className="grid-toast single-stream-toast" onAnimationEnd={() => setToast('')}>{toast}</div>}
+        <header className="single-stream-topbar">
+          <div>
+            <span className="badge ok"><Video size={13} /> LIVE STREAM</span>
+            <h1>{expanded.label}</h1>
+            <p>{expanded.city?.name || 'No city'} · {expanded.streamKey}</p>
+          </div>
+          <div className="single-stream-actions">
+            <button className="btn secondary" onClick={() => snapshot(expanded)}><Camera size={15} /> Snapshot</button>
+            {expanded.isRecording ? (
+              <button className="btn danger" onClick={() => stopRecording(expanded)}>Stop Recording</button>
+            ) : (
+              <button className="btn" onClick={() => startRecording(expanded)}>Record Stream</button>
+            )}
+            <button className="btn danger" onClick={() => setExpanded(null)}><X size={15} /> Close</button>
+          </div>
+        </header>
+        <section className="single-stream-stage">
+          <iframe
+            src={expanded.webrtcUrl}
+            allow="autoplay; fullscreen; camera; microphone"
+            allowFullScreen
+            title={expanded.label}
+          />
+        </section>
+      </main>
+    )
+  }
+
   if (fullscreenMode) {
     return (
       <main className={`grid-fullscreen-normal ${showLiveDrones ? 'with-drones' : 'grid-only-mode'}`} dir="ltr">
@@ -369,7 +420,7 @@ export default function LiveGrid() {
           {dronesPanel}
           {grid}
         </div>
-        {modal}
+        {mounted && modalContent ? createPortal(modalContent, document.body) : null}
       </main>
     )
   }
@@ -413,7 +464,7 @@ export default function LiveGrid() {
           {grid}
         </section>
 
-        {modal}
+        {mounted && modalContent ? createPortal(modalContent, document.body) : null}
       </div>
     </Shell>
   )

@@ -1,9 +1,11 @@
 import DashboardRecentPaths from '@/components/DashboardRecentPaths'
 import Shell from '@/components/Shell'
 import { getCurrentUser } from '@/lib/auth'
-import { listMediaMtxPaths, listMediaMtxRecordings, listMediaMtxSessions } from '@/lib/mediamtx'
+import { listMediaMtxPaths, listMediaMtxRecordings, listMediaMtxSessions, type MediaMtxPath, type MediaMtxSessionsMap } from '@/lib/mediamtx'
 import { prisma } from '@/lib/prisma'
 import { Activity, Building2, Clapperboard, Plane, Users, Wifi } from 'lucide-react'
+
+type AccessibleDrone = { streamKey: string; name: string; label?: string | null }
 
 export default async function Dashboard(){
   const user = await getCurrentUser()
@@ -14,8 +16,8 @@ export default async function Dashboard(){
     prisma.drone.count({ where: droneWhere }),
     prisma.user.count(),
     listMediaMtxPaths(),
-    listMediaMtxSessions().catch(() => ({} as Record<string, unknown[]>)),
-    listMediaMtxRecordings().catch(() => ({ items: [] as unknown[] })),
+    listMediaMtxSessions().catch((): MediaMtxSessionsMap => ({ rtmp: [], webrtc: [], rtsp: [], rtspConn: [], hls: [], srt: [] })),
+    listMediaMtxRecordings().catch(() => ({ items: [] })),
     prisma.drone.findMany({
       where: droneWhere,
       include: { city: true },
@@ -24,12 +26,12 @@ export default async function Dashboard(){
   ])
 
   const allowedStreamKeys = new Set(
-    accessibleDrones.flatMap((drone) => [drone.streamKey, drone.name, drone.label]).filter(Boolean),
+    (accessibleDrones as AccessibleDrone[]).flatMap((drone) => [drone.streamKey, drone.name, drone.label]).filter(Boolean),
   )
 
   const paths = canViewAll
     ? allPaths
-    : allPaths.filter((path) => {
+    : (allPaths as MediaMtxPath[]).filter((path) => {
         const pathName = String(path.name || '').toLowerCase()
         return Array.from(allowedStreamKeys).some((key) => {
           const value = String(key).toLowerCase()
@@ -37,8 +39,9 @@ export default async function Dashboard(){
         })
       })
 
-  const liveCount = paths.filter((p) => p.ready).length
-  const viewerCount = Object.values(sessions).reduce((total, list) => total + (Array.isArray(list) ? list.length : 0), 0)
+  const liveCount = (paths as MediaMtxPath[]).filter((p) => p.ready).length
+  const sessionMap = sessions as MediaMtxSessionsMap
+  const viewerCount = Object.values(sessionMap).reduce<number>((total, list) => total + list.length, 0)
 
   return (
     <Shell>
@@ -71,7 +74,7 @@ export default async function Dashboard(){
             <div className="event-row"><span className="event-dot" /><b>{liveCount}</b><span className="muted">streams are currently online.</span></div>
             <div className="event-row"><span className="event-dot" /><b>{viewerCount}</b><span className="muted">viewers are connected now.</span></div>
             <div className="event-row"><span className="event-dot" /><b>{cities}</b><span className="muted">cities are configured.</span></div>
-            <div className="event-row"><span className="event-dot" /><b>{user?.role === 'SUPER_ADMIN' ? users : 'Hidden'}</b><span className="muted">users in the system.</span></div>
+            <div className="event-row"><span className="event-dot" /><b>{user?.role === 'SUPER_ADMIN' ? String(users) : 'Hidden'}</b><span className="muted">users in the system.</span></div>
             <div className="event-row"><Building2 size={16} color="var(--gold)" /><span className="muted">City filtering is active for viewers.</span></div>
           </div>
         </section>
